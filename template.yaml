@@ -20,9 +20,10 @@ Parameters:
     NoEcho: true
 
 Resources:
-  # DynamoDB Table
   CortexTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TableName: CortexData
       BillingMode: PAY_PER_REQUEST
@@ -61,20 +62,7 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
-
-  # S3 Bucket for Meetings
-  MeetingsBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub cortex-meetings-${AWS::AccountId}
-      VersioningConfiguration:
-        Status: Enabled
-
 Outputs:
   DynamoDBTableName:
     Description: DynamoDB Table Name
     Value: !Ref CortexTable
-  
-  S3BucketName:
-    Description: S3 Bucket for Meetings
-    Value: !Ref MeetingsBucket
