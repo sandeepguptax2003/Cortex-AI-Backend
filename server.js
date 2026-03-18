@@ -97,7 +97,9 @@ app.use((req, res) => {
 
 app.use(globalErrorHandler);
 
-const PORT = process.env.PORT || 5572;
+// Elastic Beanstalk forwards traffic to port 8080 by default.
+// For local dev, set PORT=5572 in your .env file.
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Cortex AI Backend running on port ${PORT}`);
 });
