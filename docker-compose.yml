@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: cortex-api
+    ports:
+      - "5572:5572"
+    environment:
+      - NODE_ENV=production
+      - PORT=5572
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
+      - DYNAMODB_USERS_TABLE=${DYNAMODB_USERS_TABLE}
+      - DYNAMODB_ORGANISATIONS_TABLE=${DYNAMODB_ORGANISATIONS_TABLE}
+      - DYNAMODB_TICKETS_TABLE=${DYNAMODB_TICKETS_TABLE}
+      - DYNAMODB_MEETINGS_TABLE=${DYNAMODB_MEETINGS_TABLE}
+      - DYNAMODB_INVITES_TABLE=${DYNAMODB_INVITES_TABLE}
+      - DYNAMODB_NOTIFICATIONS_TABLE=${DYNAMODB_NOTIFICATIONS_TABLE}
+      - DYNAMODB_ACTIVITY_LOGS_TABLE=${DYNAMODB_ACTIVITY_LOGS_TABLE}
+      - S3_BUCKET=${S3_BUCKET}
+      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID}
+      - SLACK_CLIENT_ID=${SLACK_CLIENT_ID}
+      - SLACK_CLIENT_SECRET=${SLACK_CLIENT_SECRET}
+      - SLACK_REDIRECT_URI=${SLACK_REDIRECT_URI}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5572/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - cortex-network
+
+  # Optional: Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: cortex-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - cortex-network
+    profiles:
+      - with-redis
+
+networks:
+  cortex-network:
+    driver: bridge

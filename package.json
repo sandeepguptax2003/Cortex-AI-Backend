@@ -1,55 +1,52 @@
 {
   "name": "cortex-ai-backend",
   "version": "1.0.0",
-  "main": "dist/server.js",
+  "description": "Cortex AI - Decision Intelligence Platform Backend",
+  "main": "server.js",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/server.js",
-    "dev": "nodemon --exec ts-node server.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "lint": "eslint .",
+    "test": "jest"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/sandeepguptax2003/Cortex-AI-Backend.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/sandeepguptax2003/Cortex-AI-Backend/issues"
-  },
-  "homepage": "https://github.com/sandeepguptax2003/Cortex-AI-Backend#readme",
-  "description": "",
   "dependencies": {
-    "@aws-sdk/client-apigatewaymanagementapi": "^3.994.0",
-    "@aws-sdk/client-bedrock-runtime": "^3.994.0",
-    "@aws-sdk/client-dynamodb": "^3.994.0",
-    "@aws-sdk/client-eventbridge": "^3.994.0",
-    "@aws-sdk/client-s3": "^3.994.0",
-    "@aws-sdk/lib-dynamodb": "^3.994.0",
-    "@slack/web-api": "^7.14.1",
-    "compression": "^1.8.1",
-    "cors": "^2.8.6",
-    "dotenv": "^16.4.5",
-    "express": "^5.2.1",
-    "express-rate-limit": "^8.2.1",
-    "express-validator": "^7.3.1",
-    "helmet": "^8.1.0",
-    "jsonwebtoken": "^9.0.3",
-    "nodemailer": "^8.0.1",
-    "uuid": "^13.0.0"
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.478.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.478.0",
+    "@aws-sdk/client-dynamodb": "^3.478.0",
+    "@aws-sdk/client-s3": "^3.478.0",
+    "@aws-sdk/client-ses": "^3.478.0",
+    "@aws-sdk/lib-dynamodb": "^3.478.0",
+    "@aws-sdk/s3-request-presigner": "^3.478.0",
+    "axios": "^1.6.2",
+    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "date-fns": "^3.0.6",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "express-slow-down": "^2.0.1",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^9.0.1",
+    "ws": "^8.16.0"
   },
   "devDependencies": {
-    "@types/compression": "^1.8.1",
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6",
-    "@types/express-validator": "^2.20.33",
-    "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^25.3.0",
-    "@types/nodemailer": "^7.0.10",
-    "@types/uuid": "^10.0.0",
-    "nodemon": "^3.1.14",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
-  }
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "cortex-ai",
+    "decision-intelligence",
+    "aws",
+    "bedrock",
+    "dynamodb"
+  ],
+  "author": "Cortex AI Team",
+  "license": "MIT"
 }
