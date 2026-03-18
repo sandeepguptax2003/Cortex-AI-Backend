@@ -1,0 +1,14 @@
+version: 1.0
+runtime: nodejs18
+build:
+  commands:
+    build:
+      - npm ci --only=production
+run:
+  command: node server.js
+  network:
+    port: 5572
+    env: PORT
+  env:
+    - name: NODE_ENV
+      value: production
