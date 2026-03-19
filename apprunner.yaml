@@ -3,11 +3,11 @@ runtime: nodejs18
 build:
   commands:
     build:
-      - npm ci --only=production
+      - npm install
 run:
   command: node server.js
   network:
-    port: 5572
+    port: 8080
     env: PORT
   env:
     - name: NODE_ENV
