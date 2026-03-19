@@ -9,7 +9,6 @@ const { requestLogger } = require("./shared/middleware/Logger");
 const { globalErrorHandler } = require("./shared/middleware/ErrorHandler");
 const { responseHelper } = require("./shared/middleware/ResponseHandler");
 const { generalLimiter } = require("./shared/config/RateLimit");
-const { CORS_ORIGINS } = require("./shared/config/Constants");
 
 const userSignupRouter = require("./auth/routes/UserSignupRoutes");
 const userLoginRouter = require("./auth/routes/UserLoginRoutes");
@@ -33,21 +32,34 @@ const app = express();
 
 app.use(helmet());
 
+// CORS Configuration
+// For Production
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
   : null;
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (!allowedOrigins || allowedOrigins.length === 0) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      callback(new Error(`CORS: Origin '${origin}' is not allowed`));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  })
+);
 
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (!allowedOrigins || allowedOrigins.length === 0) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error(`CORS: Origin '${origin}' is not allowed`));
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-}));
+// For Development
+// app.use(
+//   cors({
+//     origin: true,
+//     credentials: true,
+//     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+//     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+//   })
+// );
 
 app.use(compression());
 app.use(cookieParser());
@@ -58,13 +70,9 @@ app.use(responseHelper);
 app.use(requestLogger);
 app.use(generalLimiter);
 
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    service: "cortex-ai-backend",
-    timestamp: new Date().toISOString(),
-    version: "1.0.0",
-  });
+// Default route
+app.get("/", (req, res) => {
+  res.send("Cortex AI Backend Service");
 });
 
 app.use("/auth/user", userSignupRouter);
@@ -97,8 +105,6 @@ app.use((req, res) => {
 
 app.use(globalErrorHandler);
 
-// Elastic Beanstalk forwards traffic to port 8080 by default.
-// For local dev, set PORT=5572 in your .env file.
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Cortex AI Backend running on port ${PORT}`);
