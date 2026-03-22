@@ -1,4 +1,4 @@
-const { BedrockRuntimeClient, InvokeModelCommand } = require("@aws-sdk/client-bedrock-runtime");
+const { BedrockRuntimeClient, ConverseCommand } = require("@aws-sdk/client-bedrock-runtime");
 const { v4: uuidv4 } = require("uuid");
 const { BEDROCK_CONFIG, TABLES, TICKET_STATUSES, TICKET_PRIORITIES } = require("../../../shared/config/Constants");
 const { DynamoDBService } = require("../../../shared/utils/DynamoDB");
@@ -13,23 +13,23 @@ const bedrockClient = new BedrockRuntimeClient({
 });
 
 async function callBedrock(messages, systemPrompt, maxTokens = 2000) {
-  const prompt = {
-    anthropic_version: "bedrock-2023-05-31",
-    max_tokens: maxTokens,
-    system: systemPrompt,
-    messages,
-  };
+  const converseMessages = messages.map((m) => ({
+    role: m.role,
+    content: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
+  }));
 
-  const command = new InvokeModelCommand({
+  const command = new ConverseCommand({
     modelId: BEDROCK_CONFIG.modelId,
-    contentType: "application/json",
-    accept: "application/json",
-    body: JSON.stringify(prompt),
+    system: [{ text: systemPrompt }],
+    messages: converseMessages,
+    inferenceConfig: {
+      maxTokens,
+      temperature: 0.7,
+    },
   });
 
   const response = await bedrockClient.send(command);
-  const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-  return responseBody.content?.[0]?.text || "";
+  return response.output?.message?.content?.[0]?.text || "";
 }
 
 const AIChatController = {
@@ -41,31 +41,40 @@ const AIChatController = {
       throw new APIError("Message is required", "VALIDATION_ERROR", 400);
     }
 
-    const systemPrompt = `You are Cortex AI, a powerful decision intelligence assistant for a team collaboration platform.
+    const systemPrompt = `You are Cortex AI, a smart team assistant for a project management platform. You help users manage tickets, meetings, and team progress.
 
-Your capabilities include:
-1. Creating and managing tickets/tasks
-2. Updating ticket status, priority, and assignments
-3. Searching and retrieving ticket information
-4. Summarizing meetings and transcripts
-5. Answering questions about the platform
-6. Providing analytics and insights
-7. Helping with team management
+Respond with ONLY a valid JSON object — no markdown fences, no extra text outside the JSON:
 
-When users ask you to perform actions, respond with a JSON object in this format:
-{
-  "type": "action|response",
-  "action": "create_ticket|update_ticket|search_tickets|general",
-  "data": { ...action-specific data },
-  "message": "Human-friendly response"
-}
+{"type":"response","action":"general","data":{},"message":"<your full answer here>"}
 
-Current user context:
+Action values:
+- create_ticket → user wants to create a task. data = { title, description, priority: LOW|MEDIUM|HIGH|URGENT }
+- search_tickets → user wants to see or find tickets
+- overdue_tickets → user asks what is late or overdue
+- analytics → user asks for team stats or productivity overview
+- general → everything else — write a complete, helpful answer in message
+
+FORMATTING RULES for the message field (use these for rich responses):
+- Use **bold** for key terms or titles
+- Use numbered lists (1. 2. 3.) for step-by-step instructions
+- Use bullet points (• or -) for feature lists
+- Use [link text](/path) for navigation: [Meetings page](/meetings), [Board](/board), [Dashboard](/dashboard), [Settings](/settings)
+- For sample code or transcripts, wrap in triple backticks: \`\`\`\\nContent here\\n\`\`\`
+- Use --- on its own line for visual separators between sections
+- Keep tone professional, friendly, and direct — like a helpful colleague
+
+CRITICAL:
+- The "message" field must ALWAYS be your actual answer — never a placeholder
+- For how-to questions, give numbered steps with relevant page links
+- For sample transcript requests, provide a realistic business meeting transcript inside triple backticks, then give exact numbered steps to use it
+- For feature questions, list capabilities with bullet points
+
+Current user:
 - User ID: ${userId}
 - Organisation ID: ${organisationId || "Not set"}
 - Role: ${role || "Unknown"}
 
-Be professional, concise, and helpful. Always provide clear, actionable responses.`;
+Return ONLY the JSON object. No explanation outside the JSON.`;
 
     const conversation = [{ role: "user", content: message }];
     const aiResponse = await callBedrock(conversation, systemPrompt, 2000);
@@ -92,7 +101,7 @@ Be professional, concise, and helpful. Always provide clear, actionable response
         description: ticketData.description || "",
         status: TICKET_STATUSES.BACKLOG,
         priority: ticketData.priority || TICKET_PRIORITIES.MEDIUM,
-        assigneeId: ticketData.assigneeId || null,
+        assigneeId: ticketData.assigneeId || userId,
         coAssignees: [],
         reviewerId: null,
         createdBy: userId,
@@ -121,7 +130,70 @@ Be professional, concise, and helpful. Always provide clear, actionable response
         keyConditionExpression: "orgId = :orgId",
         expressionAttributeValues: { ":orgId": organisationId },
       });
-      parsedResponse.data = { tickets: result.items.slice(0, 10) };
+      const allTickets = result.items || [];
+      const tickets = allTickets.slice(0, 10);
+      parsedResponse.data = { tickets };
+      if (tickets.length === 0) {
+        parsedResponse.message = "No tickets found for your team yet.";
+      } else {
+        const lines = tickets.map((t) => `• **${t.title}** — ${t.status.replace(/_/g, " ")}, ${t.priority} priority`);
+        parsedResponse.message = `**${allTickets.length} ticket${allTickets.length !== 1 ? "s" : ""} found** (showing ${tickets.length}):\n${lines.join("\n")}`;
+      }
+    }
+
+    if (parsedResponse.type === "action" && parsedResponse.action === "overdue_tickets") {
+      const result = await DynamoDBService.query(TABLES.TICKETS, {
+        indexName: "OrgIndex",
+        keyConditionExpression: "orgId = :orgId",
+        expressionAttributeValues: { ":orgId": organisationId },
+      });
+      const now = new Date();
+      const overdue = (result.items || []).filter(
+        (t) => t.deadline && new Date(t.deadline) < now && t.status !== "DONE"
+      );
+      parsedResponse.data = { overdue };
+      if (overdue.length === 0) {
+        parsedResponse.message = "No overdue tickets. Your team is on track!";
+      } else {
+        const lines = overdue.slice(0, 10).map((t) => {
+          const daysAgo = Math.floor((now - new Date(t.deadline)) / (1000 * 60 * 60 * 24));
+          return `• **${t.title}** — ${t.priority} priority, ${daysAgo} day${daysAgo !== 1 ? "s" : ""} overdue`;
+        });
+        parsedResponse.message = `**${overdue.length} overdue ticket${overdue.length !== 1 ? "s" : ""}:**\n${lines.join("\n")}`;
+        if (overdue.length > 10) {
+          parsedResponse.message += `\n\n...and ${overdue.length - 10} more.`;
+        }
+      }
+    }
+
+    if (parsedResponse.type === "action" && parsedResponse.action === "analytics") {
+      const result = await DynamoDBService.query(TABLES.TICKETS, {
+        indexName: "OrgIndex",
+        keyConditionExpression: "orgId = :orgId",
+        expressionAttributeValues: { ":orgId": organisationId },
+      });
+      const tickets = result.items || [];
+      const statusCounts = tickets.reduce((acc, t) => {
+        acc[t.status] = (acc[t.status] || 0) + 1;
+        return acc;
+      }, {});
+      const priorityCounts = tickets.reduce((acc, t) => {
+        acc[t.priority] = (acc[t.priority] || 0) + 1;
+        return acc;
+      }, {});
+      const overdueCount = tickets.filter(
+        (t) => t.deadline && new Date(t.deadline) < new Date() && t.status !== "DONE"
+      ).length;
+      const analytics = {
+        totalTickets: tickets.length,
+        byStatus: statusCounts,
+        byPriority: priorityCounts,
+        overdue: overdueCount,
+        completed: statusCounts["DONE"] || 0,
+        inProgress: statusCounts["IN_PROGRESS"] || 0,
+      };
+      parsedResponse.data = analytics;
+      parsedResponse.message = `Team has ${tickets.length} total tickets — ${analytics.inProgress} in progress, ${analytics.completed} completed, ${analytics.overdue} overdue.`;
     }
 
     res.success({

@@ -84,8 +84,8 @@ const UserLoginController = {
   }),
 
   logout: asyncHandler(async (req, res) => {
-    res.clearCookie("token", COOKIE_OPTIONS);
-    res.clearCookie("refreshToken", COOKIE_OPTIONS);
+    res.clearCookie("token", { httpOnly: true, secure: true, sameSite: "none" });
+    res.clearCookie("refreshToken", { httpOnly: true, secure: true, sameSite: "none" });
     res.success(null, "Logged out successfully");
   }),
 };

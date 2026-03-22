@@ -16,17 +16,35 @@ const TeamController = {
       throw new APIError("User is not part of an organisation", "NO_ORG", 400);
     }
 
-    const result = await DynamoDBService.scan(TABLES.USERS, {
+    const usersResult = await DynamoDBService.scan(TABLES.USERS, {
       filterExpression: "organisationId = :orgId",
       expressionAttributeValues: { ":orgId": organisationId },
     });
 
-    const members = result.items.map((user) => {
-      const { password, ...userWithoutPassword } = user;
-      return userWithoutPassword;
+    const ticketsResult = await DynamoDBService.scan(TABLES.TICKETS, {
+      filterExpression: "orgId = :orgId",
+      expressionAttributeValues: { ":orgId": organisationId },
     });
 
-    res.success(members);
+    const allTickets = ticketsResult.items;
+    const now = new Date();
+
+    const members = usersResult.items.map((user) => {
+      const { password, ...userWithoutPassword } = user;
+      const memberTickets = allTickets.filter(
+        (t) => t.assigneeId === user.userId || (!t.assigneeId && t.createdBy === user.userId)
+      );
+      return {
+        ...userWithoutPassword,
+        ticketCount: memberTickets.length,
+        completedCount: memberTickets.filter((t) => t.status === "DONE").length,
+        overdueCount: memberTickets.filter(
+          (t) => t.deadline && new Date(t.deadline) < now && t.status !== "DONE"
+        ).length,
+      };
+    });
+
+    res.success({ members, total: members.length });
   }),
 
   /**
@@ -52,9 +70,12 @@ const TeamController = {
     const members = usersResult.items;
     const tickets = ticketsResult.items;
 
-    // Calculate stats
+    const now = new Date();
+    const completedTickets = tickets.filter((t) => t.status === "DONE").length;
+
     const stats = {
       totalMembers: members.length,
+      totalCompleted: completedTickets,
       roleDistribution: {
         ADMIN: members.filter((m) => m.role === USER_ROLES.ADMIN).length,
         MANAGER: members.filter((m) => m.role === USER_ROLES.MANAGER).length,
@@ -66,19 +87,21 @@ const TeamController = {
         ACTIVE: tickets.filter((t) => t.status === "ACTIVE").length,
         IN_PROGRESS: tickets.filter((t) => t.status === "IN_PROGRESS").length,
         IN_REVIEW: tickets.filter((t) => t.status === "IN_REVIEW").length,
-        DONE: tickets.filter((t) => t.status === "DONE").length,
+        DONE: completedTickets,
       },
       memberStats: members.map((member) => {
-        const memberTickets = tickets.filter((t) => t.assigneeId === member.userId);
+        const memberTickets = tickets.filter(
+          (t) => t.assigneeId === member.userId || (!t.assigneeId && t.createdBy === member.userId)
+        );
         return {
           userId: member.userId,
           name: member.name,
           email: member.email,
           role: member.role,
           ticketCount: memberTickets.length,
-          completedTickets: memberTickets.filter((t) => t.status === "DONE").length,
-          overdueTickets: memberTickets.filter(
-            (t) => t.deadline && new Date(t.deadline) < new Date() && t.status !== "DONE"
+          completedCount: memberTickets.filter((t) => t.status === "DONE").length,
+          overdueCount: memberTickets.filter(
+            (t) => t.deadline && new Date(t.deadline) < now && t.status !== "DONE"
           ).length,
         };
       }),

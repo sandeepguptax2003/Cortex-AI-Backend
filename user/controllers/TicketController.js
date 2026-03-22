@@ -34,23 +34,29 @@ const TicketController = {
     if (priority) tickets = tickets.filter((t) => t.priority === priority);
 
     tickets.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-    res.success(tickets);
+    res.success({ tickets, total: tickets.length });
   }),
 
   /**
-   * Get tickets assigned to current user
+   * Get tickets assigned to current user (or created by them with no assignee — covers legacy data)
    */
   getMyTickets: asyncHandler(async (req, res) => {
-    const { userId } = req.user;
+    const { userId, organisationId } = req.user;
 
-    // Scan by assigneeId (no AssigneeIndex GSI available)
+    if (!organisationId) {
+      throw new APIError("User is not part of an organisation", "NO_ORG", 400);
+    }
+
     const result = await DynamoDBService.scan(TABLES.TICKETS, {
-      filterExpression: "assigneeId = :userId",
-      expressionAttributeValues: { ":userId": userId },
+      filterExpression: "orgId = :orgId",
+      expressionAttributeValues: { ":orgId": organisationId },
     });
 
-    const tickets = result.items.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-    res.success(tickets);
+    const tickets = (result.items || [])
+      .filter((t) => t.assigneeId === userId || (!t.assigneeId && t.createdBy === userId))
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+    res.success({ tickets, total: tickets.length });
   }),
 
   /**
@@ -79,7 +85,8 @@ const TicketController = {
       },
     });
 
-    res.success(result.items);
+    const overdueTickets = result.items.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+    res.success({ tickets: overdueTickets, total: overdueTickets.length });
   }),
 
   /**
@@ -136,9 +143,8 @@ const TicketController = {
       description: description || "",
       status: TICKET_STATUSES.BACKLOG,
       priority,
-      // IMPORTANT: omit assigneeId/reviewerId entirely if null/undefined
-      // to avoid breaking sparse GSI constraints
-      ...(assigneeId && { assigneeId }),
+      // Default assigneeId to creator so "My Tickets" always shows self-created tickets
+      assigneeId: assigneeId || userId,
       coAssignees: coAssignees || [],
       ...(reviewerId && { reviewerId }),
       createdBy: userId,

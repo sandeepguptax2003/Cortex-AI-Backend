@@ -17,7 +17,7 @@ const InviteController = {
    */
   createInvite: asyncHandler(async (req, res) => {
     const { userId, organisationId, role } = req.user;
-    const { requireDomain = false } = req.body;
+    const { requireDomain = false, invitedRole = "MEMBER" } = req.body;
 
     if (!organisationId) {
       throw new APIError("User is not part of an organisation", "NO_ORG", 400);
@@ -27,6 +27,9 @@ const InviteController = {
     if (role !== USER_ROLES.ADMIN && role !== USER_ROLES.MANAGER) {
       throw new APIError("Only admins and managers can create invites", "FORBIDDEN", 403);
     }
+
+    const allowedRoles = [USER_ROLES.MEMBER, USER_ROLES.MANAGER, USER_ROLES.ADMIN];
+    const resolvedRole = allowedRoles.includes(invitedRole) ? invitedRole : USER_ROLES.MEMBER;
 
     const token = generateInviteToken();
     const now = new Date();
@@ -42,12 +45,13 @@ const InviteController = {
       usedBy: null,
       usedAt: null,
       requireDomain,
+      invitedRole: resolvedRole,
     };
 
     await DynamoDBService.put(TABLES.INVITES, invite);
 
-    // Generate invite URL
-    const inviteUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"}/signup?token=${token}&orgId=${organisationId}`;
+    // Generate invite URL — params match the signup page query param names
+    const inviteUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"}/signup?invite=${token}&org=${organisationId}`;
 
     res.success(
       {
@@ -78,11 +82,14 @@ const InviteController = {
       expressionAttributeValues: { ":orgId": organisationId },
     });
 
-    const invites = result.items.sort(
-      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-    );
+    const invites = result.items
+      .map((invite) => ({
+        ...invite,
+        status: invite.used ? "USED" : new Date(invite.expiresAt) < new Date() ? "EXPIRED" : "PENDING",
+      }))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    res.success(invites);
+    res.success({ invites, total: invites.length });
   }),
 
   /**

@@ -43,44 +43,40 @@ const AnalyticsController = {
     const recentTickets = tickets.filter((t) => new Date(t.createdAt) >= thirtyDaysAgo);
     const recentMeetings = meetings.filter((m) => new Date(m.createdAt) >= sevenDaysAgo);
 
+    const doneCount = tickets.filter((t) => t.status === TICKET_STATUSES.DONE).length;
+
     const analytics = {
-      overview: {
-        totalTickets: tickets.length,
-        totalMeetings: meetings.length,
-        totalMembers: members.length,
-        activeTickets: tickets.filter((t) => t.status !== TICKET_STATUSES.DONE).length,
-        completedTickets: tickets.filter((t) => t.status === TICKET_STATUSES.DONE).length,
-        overdueTickets: tickets.filter(
-          (t) =>
-            t.deadline &&
-            new Date(t.deadline) < now &&
-            t.status !== TICKET_STATUSES.DONE
+      ticketStats: {
+        total: tickets.length,
+        byStatus: {
+          BACKLOG: tickets.filter((t) => t.status === TICKET_STATUSES.BACKLOG).length,
+          ACTIVE: tickets.filter((t) => t.status === TICKET_STATUSES.ACTIVE).length,
+          IN_PROGRESS: tickets.filter((t) => t.status === TICKET_STATUSES.IN_PROGRESS).length,
+          IN_REVIEW: tickets.filter((t) => t.status === TICKET_STATUSES.IN_REVIEW).length,
+          DONE: doneCount,
+        },
+        byPriority: {
+          URGENT: tickets.filter((t) => t.priority === "URGENT").length,
+          HIGH: tickets.filter((t) => t.priority === "HIGH").length,
+          MEDIUM: tickets.filter((t) => t.priority === "MEDIUM").length,
+          LOW: tickets.filter((t) => t.priority === "LOW").length,
+        },
+        completionRate: tickets.length > 0 ? Math.round((doneCount / tickets.length) * 100) : 0,
+        overdue: tickets.filter(
+          (t) => t.deadline && new Date(t.deadline) < now && t.status !== TICKET_STATUSES.DONE
         ).length,
       },
-      ticketsByStatus: {
-        BACKLOG: tickets.filter((t) => t.status === TICKET_STATUSES.BACKLOG).length,
-        ACTIVE: tickets.filter((t) => t.status === TICKET_STATUSES.ACTIVE).length,
-        IN_PROGRESS: tickets.filter((t) => t.status === TICKET_STATUSES.IN_PROGRESS).length,
-        IN_REVIEW: tickets.filter((t) => t.status === TICKET_STATUSES.IN_REVIEW).length,
-        DONE: tickets.filter((t) => t.status === TICKET_STATUSES.DONE).length,
+      teamStats: {
+        totalMembers: members.length,
+        recentTickets: recentTickets.length,
+        recentMeetings: recentMeetings.length,
       },
-      ticketsByPriority: {
-        LOW: tickets.filter((t) => t.priority === "LOW").length,
-        MEDIUM: tickets.filter((t) => t.priority === "MEDIUM").length,
-        HIGH: tickets.filter((t) => t.priority === "HIGH").length,
-        CRITICAL: tickets.filter((t) => t.priority === "CRITICAL").length,
-      },
-      recentActivity: {
-        ticketsThisMonth: recentTickets.length,
-        meetingsThisWeek: recentMeetings.length,
-      },
-      productivity: {
-        averageCompletionTime: calculateAverageCompletionTime(tickets),
-        ticketsPerMember: members.map((m) => ({
-          userId: m.userId,
-          name: m.name,
-          ticketCount: tickets.filter((t) => t.assigneeId === m.userId).length,
-        })),
+      meetingStats: {
+        totalMeetings: meetings.length,
+        totalTasksExtracted: meetings.reduce((sum, m) => sum + (m.extractedTasks?.length || 0), 0),
+        avgTasksPerMeeting: meetings.length > 0
+          ? Math.round(meetings.reduce((sum, m) => sum + (m.extractedTasks?.length || 0), 0) / meetings.length)
+          : 0,
       },
     };
 
@@ -111,26 +107,60 @@ const AnalyticsController = {
     });
     const tickets = ticketsResult.items;
 
-    // Generate daily stats
-    const dailyStats = generateDailyStats(tickets, start, end);
+    const meetingsResult = await DynamoDBService.scan(TABLES.MEETINGS, {
+      filterExpression: "orgId = :orgId",
+      expressionAttributeValues: { ":orgId": organisationId },
+    });
+    const meetings = meetingsResult.items;
+
+    const usersResult = await DynamoDBService.scan(TABLES.USERS, {
+      filterExpression: "organisationId = :orgId",
+      expressionAttributeValues: { ":orgId": organisationId },
+    });
+    const members = usersResult.items;
+
+    const allTicketsResult = await DynamoDBService.scan(TABLES.TICKETS, {
+      filterExpression: "orgId = :orgId",
+      expressionAttributeValues: { ":orgId": organisationId },
+    });
+    const allTickets = allTicketsResult.items;
+
+    const now = new Date();
+    const doneCount = tickets.filter((t) => t.status === TICKET_STATUSES.DONE).length;
 
     const analytics = {
-      dateRange: {
-        start: start.toISOString(),
-        end: end.toISOString(),
+      ticketStats: {
+        total: tickets.length,
+        completionRate: tickets.length > 0 ? Math.round((doneCount / tickets.length) * 100) : 0,
+        avgResolutionTime: calculateAverageCompletionTime(tickets),
+        byStatus: {
+          BACKLOG: tickets.filter((t) => t.status === TICKET_STATUSES.BACKLOG).length,
+          ACTIVE: tickets.filter((t) => t.status === TICKET_STATUSES.ACTIVE).length,
+          IN_PROGRESS: tickets.filter((t) => t.status === TICKET_STATUSES.IN_PROGRESS).length,
+          IN_REVIEW: tickets.filter((t) => t.status === TICKET_STATUSES.IN_REVIEW).length,
+          DONE: doneCount,
+        },
       },
-      summary: {
-        totalTickets: tickets.length,
-        completedTickets: tickets.filter((t) => t.status === TICKET_STATUSES.DONE).length,
-        averageCompletionTime: calculateAverageCompletionTime(tickets),
+      meetingStats: {
+        totalMeetings: meetings.length,
+        totalTasksExtracted: meetings.reduce((sum, m) => sum + (m.extractedTasks?.length || 0), 0),
+        avgTasksPerMeeting: meetings.length > 0
+          ? Math.round(meetings.reduce((sum, m) => sum + (m.extractedTasks?.length || 0), 0) / meetings.length)
+          : 0,
       },
-      dailyStats,
-      sourceBreakdown: {
-        MANUAL: tickets.filter((t) => t.sourceType === "MANUAL").length,
-        MEETING: tickets.filter((t) => t.sourceType === "MEETING").length,
-        SLACK: tickets.filter((t) => t.sourceType === "SLACK").length,
-        CHROME_EXTENSION: tickets.filter((t) => t.sourceType === "CHROME_EXTENSION").length,
-      },
+      memberStats: members.map((member) => {
+        const memberTickets = allTickets.filter((t) => t.assigneeId === member.userId);
+        return {
+          userId: member.userId,
+          name: member.name,
+          email: member.email,
+          ticketCount: memberTickets.length,
+          completedCount: memberTickets.filter((t) => t.status === "DONE").length,
+          overdueCount: memberTickets.filter(
+            (t) => t.deadline && new Date(t.deadline) < now && t.status !== "DONE"
+          ).length,
+        };
+      }),
     };
 
     res.success(analytics);
@@ -188,11 +218,11 @@ const AnalyticsController = {
       }
     });
 
-    res.success(
-      Object.entries(trends)
-        .map(([date, stats]) => ({ date, ...stats }))
-        .sort((a, b) => new Date(a.date) - new Date(b.date))
-    );
+    const trendArray = Object.entries(trends)
+      .map(([date, stats]) => ({ date, count: stats.created, completed: stats.completed }))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    res.success({ trends: trendArray });
   }),
 };
 

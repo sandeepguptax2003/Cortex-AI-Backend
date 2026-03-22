@@ -24,7 +24,7 @@ const MeetingController = {
     });
 
     const meetings = result.items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    res.success(meetings);
+    res.success({ meetings, total: meetings.length });
   }),
 
   /**
@@ -70,7 +70,7 @@ const MeetingController = {
       (m) => m.participants?.some((p) => p.userId === userId)
     );
 
-    res.success(activeMeeting || null);
+    res.success({ meeting: activeMeeting || null });
   }),
 
   /**
@@ -122,7 +122,7 @@ const MeetingController = {
 
     await DynamoDBService.put(TABLES.MEETINGS, meeting);
 
-    res.success(meeting, "Meeting started successfully", 201);
+    res.success({ meeting }, "Meeting started successfully", 201);
   }),
 
   /**
@@ -159,7 +159,7 @@ const MeetingController = {
       { status: "ENDED", endedAt: now, updatedAt: now }
     );
 
-    res.success(updatedMeeting, "Meeting ended successfully");
+    res.success({ meeting: updatedMeeting }, "Meeting ended successfully");
   }),
 
   /**

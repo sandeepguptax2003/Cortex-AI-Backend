@@ -36,8 +36,8 @@ const S3_CONFIG = {
 
 // AWS Bedrock Configuration
 const BEDROCK_CONFIG = {
-  region: process.env.AWS_REGION || "us-east-1",
-  modelId: process.env.BEDROCK_MODEL_ID || "anthropic.claude-3-sonnet-20240229-v1:0",
+  region: process.env.BEDROCK_REGION || "us-east-1",
+  modelId: process.env.BEDROCK_MODEL_ID || "us.amazon.nova-micro-v1:0",
 };
 
 // Slack Configuration

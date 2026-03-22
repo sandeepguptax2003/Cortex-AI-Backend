@@ -48,8 +48,8 @@ const UserSignupController = {
       if (!invite || invite.used || new Date(invite.expiresAt) < new Date()) {
         throw new APIError("Invalid or expired invite token", "INVALID_INVITE", 400);
       }
-      organisationId = invite.organisationId;
-      role = invite.role || USER_ROLES.MEMBER;
+      organisationId = invite.orgId;
+      role = invite.invitedRole || invite.role || USER_ROLES.MEMBER;
 
       await DynamoDBService.update(
         TABLES.INVITES,
