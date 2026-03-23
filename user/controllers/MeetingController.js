@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require("uuid");
 const { DynamoDBService } = require("../../shared/utils/DynamoDB");
 const { TABLES } = require("../../shared/config/Constants");
 const { APIError, asyncHandler } = require("../../shared/middleware/ErrorHandler");
+const { EmailService } = require("../../shared/utils/Email");
 
 /**
  * Meeting Controller
@@ -159,6 +160,11 @@ const MeetingController = {
       { status: "ENDED", endedAt: now, updatedAt: now }
     );
 
+    // Send summary email to all org members (fire-and-forget — don't block response)
+    sendMeetingSummaryEmail({ meeting: updatedMeeting, organisationId }).catch((err) =>
+      console.error("[endMeeting] Email error:", err.message)
+    );
+
     res.success({ meeting: updatedMeeting }, "Meeting ended successfully");
   }),
 
@@ -214,5 +220,48 @@ const MeetingController = {
     res.success(updatedMeeting, "Caption added successfully");
   }),
 };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function sendMeetingSummaryEmail({ meeting, organisationId }) {
+  // Fetch all org members to get their emails
+  const usersResult = await DynamoDBService.scan(TABLES.USERS, {
+    filterExpression: "organisationId = :orgId",
+    expressionAttributeValues: { ":orgId": organisationId },
+  });
+
+  const members = usersResult.items || [];
+  const toEmails = members
+    .map((m) => m.email)
+    .filter(Boolean);
+
+  if (toEmails.length === 0) return;
+
+  // Fetch tickets created from this meeting (sourceType = "MEETING" or matching by meeting context)
+  // We use a broad org scan and filter by sourceType for simplicity
+  const ticketsResult = await DynamoDBService.scan(TABLES.TICKETS, {
+    filterExpression: "orgId = :orgId",
+    expressionAttributeValues: { ":orgId": organisationId },
+  });
+
+  // Match tickets created around the time of the meeting
+  const meetingStart = new Date(meeting.createdAt).getTime();
+  const meetingEnd = new Date(meeting.endedAt).getTime();
+  const meetingTickets = (ticketsResult.items || [])
+    .filter((t) => {
+      const created = new Date(t.createdAt).getTime();
+      return created >= meetingStart && created <= meetingEnd && t.sourceType === "MEETING";
+    })
+    .map((t) => ({
+      ...t,
+      assigneeName: members.find((m) => m.userId === t.assigneeId)?.name || null,
+    }));
+
+  await EmailService.sendMeetingSummary({
+    toEmails,
+    meeting,
+    tickets: meetingTickets,
+  });
+}
 
 module.exports = MeetingController;
