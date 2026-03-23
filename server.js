@@ -52,14 +52,14 @@ app.use(
 );
 
 // For Development
-app.use(
-  cors({
-    origin: true,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-  })
-);
+// app.use(
+//   cors({
+//     origin: true,
+//     credentials: true,
+//     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+//     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+//   })
+// );
 
 app.use(compression());
 app.use(cookieParser());
